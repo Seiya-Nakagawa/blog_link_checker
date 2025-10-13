@@ -27,7 +27,7 @@ resource "aws_sns_topic_policy" "sns_topic_policy_system" {
 }
 
 resource "aws_sns_topic_subscription" "email_target" {
-  for_each = toset(var.notification_emails_blog)
+  for_each = toset(distinct(concat(var.notification_emails_blog, var.notification_emails)))
 
   topic_arn = aws_sns_topic.sns_topic_system.arn
   protocol  = "email"

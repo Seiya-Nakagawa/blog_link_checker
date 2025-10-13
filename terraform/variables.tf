@@ -73,6 +73,12 @@ variable "lambda_exclude_strings" {
   type        = string
 }
 
+variable "notification_emails" {
+  description = "通知を受け取るメールアドレスのリスト"
+  type        = list(string)
+  default     = []
+}
+
 variable "notification_emails_blog" {
   description = "通知を受け取るメールアドレスのリスト"
   type        = list(string)
