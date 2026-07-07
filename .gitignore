@@ -1,1 +1,5 @@
 error.log
+
+# clasp local auth (OAuth credentials, must never be committed)
+.clasp-auth.json
+.clasprc.json

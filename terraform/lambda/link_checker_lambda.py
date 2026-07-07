@@ -35,6 +35,9 @@ CSV_HEADERS = [
     "確認結果", "ステータスコード", "アフィリエイト広告リンク先URL", "エラーメッセージ", "タイムスタンプ"
 ]
 
+# GAS側 (post_result_s3download.gs の checkLambdaCompletionStatus_) が参照するフラグファイル
+COMPLETION_STATUS_FILE_KEY = "lambda_completion_status.json"
+
 # --- 環境変数からの設定読み込み ---
 try:
     S3_OUTPUT_BUCKET = os.environ['S3_OUTPUT_BUCKET']
@@ -152,6 +155,26 @@ def check_link_status(url, ng_words=None):
         except requests.exceptions.RequestException as e:
             return {"status_code": None, "final_url": current_url, "error_message": str(e)}
     return {"status_code": None, "final_url": current_url, "error_message": "Meta refresh redirect limit exceeded"}
+
+def write_completion_status(status, error_message=None):
+    """GAS側の後続処理(mainPostProcess)が本日分の完了可否を判定するためのフラグファイルをS3に書き込みます。"""
+    try:
+        body = {
+            "status": status,
+            "last_success_date": datetime.now(JST).strftime('%Y-%m-%d'),
+            "timestamp": datetime.now(JST).isoformat()
+        }
+        if error_message:
+            body["error_message"] = error_message
+        s3_client.put_object(
+            Bucket=S3_OUTPUT_BUCKET,
+            Key=COMPLETION_STATUS_FILE_KEY,
+            Body=json.dumps(body, ensure_ascii=False).encode('utf-8'),
+            ContentType='application/json'
+        )
+        logger.info(f"完了ステータスファイルを s3://{S3_OUTPUT_BUCKET}/{COMPLETION_STATUS_FILE_KEY} にアップロードしました (status={status})")
+    except Exception as e:
+        logger.error(f"完了ステータスファイルのアップロードに失敗しました: {e}")
 
 # --- メイン処理 (Lambdaハンドラ) ---
 
@@ -307,11 +330,13 @@ def lambda_handler(event, context):
             csv_body = output.getvalue()
             s3_client.put_object(Bucket=S3_OUTPUT_BUCKET, Key=csv_output_key, Body=csv_body.encode('utf-8-sig'), ContentType='text/csv')
             logger.info(f"結果CSVを s3://{S3_OUTPUT_BUCKET}/{csv_output_key} にアップロードしました")
+            write_completion_status('SUCCESS')
         else:
             logger.error("S3_OUTPUT_BUCKET 環境変数が設定されていません。結果をアップロードできません。")
-        
+
         return {'statusCode': 200, 'body': json.dumps({'message': 'リンクチェック処理が正常に完了しました！'}, ensure_ascii=False)}
 
     except Exception as e:
         logger.error(f"リンクチェック処理中に予期せぬエラーが発生しました: {e}", exc_info=True)
+        write_completion_status('FAILURE', error_message=str(e))
         return {'statusCode': 500, 'body': json.dumps({'message': f'リンクチェック処理中にエラーが発生しました: {str(e)}'}, ensure_ascii=False)}

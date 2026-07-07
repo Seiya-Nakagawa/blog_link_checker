@@ -54,22 +54,38 @@ Lambda関数（Python）のコードは `terraform/lambda/` にあります。
 
 ### 3. Google Apps Script (GAS)
 
-`gas/` ディレクトリ内のスクリプトをGoogleスプレッドシートに紐づくGASプロジェクトにコピー＆ペーストして設定します。
+`gas/` は clasp プロジェクトとして管理しています（リポジトリ直下の `.clasp.json`、`rootDir: "gas"`）。作業用スプレッドシートにコンテナバインドされたGASプロジェクトに対して、`clasp push` でコードを反映します。
 
-1.  **スクリプトプロパティの設定**
-    基本設計書に従い、以下の情報をGASのスクリプトプロパティに設定します。
+1.  **clasp の認証**
+    このマシンの他のGASプロジェクトのログイン状態に影響しないよう、プロジェクト専用の認証ファイルを使います。
+
+    ```bash
+    export clasp_config_auth="$(pwd)/.clasp-auth.json"
+    clasp login   # または clasp login --no-localhost
+    ```
+
+    `.clasp-auth.json` はOAuthトークンを含むため、コミットしないでください（`.gitignore` 済み）。
+
+2.  **コードの反映**
+
+    ```bash
+    export clasp_config_auth="$(pwd)/.clasp-auth.json"
+    clasp push
+    ```
+
+3.  **スクリプトプロパティの設定**
+    基本設計書に従い、以下の情報をGASのスクリプトプロパティに設定します（GASのUI上でのみ設定可能。値は機密情報のためコミットしません）。
 
     | キー | 値の例 | 説明 |
     | :--- | :--- | :--- |
     | `SPREADSHEET_ID_WORK` | `12345abcde...` | 作業用スプレッドシートのID |
     | `SPREADSHEET_ID_SOURCE` | `67890fghij...` | URLリストが記載された原本スプレッドシートの   ID |
     | `S3_BUCKET_NAME` | `your-s3-bucket-name` | AWS S3バケット名 |
-    | `S3_BUCKET_REGION` | `ap-northeast-1` | S3バケットのリージョン |
     | `EMAIL_ADDRESSES` | `your-email@example.com` | 通知を受け取るメールアドレス |
     | `AWS_ACCESS_KEY_ID` | `AKIAIOSFODNN7EXAMPLE` | AWSアクセスキーID |
     | `AWS_SECRET_ACCESS_KEY` | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWSシークレット    アクセスキー |
 
-2.  **トリガーの設定**
+4.  **トリガーの設定**
     以下の2つの関数に対して、時間ベースのトリガーを設定します。
     *   `pre_url_s3upload.gs` 内の関数（`mainPreProcess`）: Lambda処理の前に実行（日次）
     *   `post_result_s3download.gs` 内の関数（`mainPostProcess`）: Lambda処理が十分に完了する時間を見越して実行（日次）
