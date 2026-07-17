@@ -31,8 +31,10 @@ function mainPostProcess(e) {
 
   if (isTriggeredExecution) {
     Logger.log("トリガーによる自動実行を検出しました。");
-    if (!checkLambdaCompletionStatus_()) {
-      Logger.log("前提となるLambda処理が本日完了していないため、後続処理を中断しました。");
+    const statusCheck = checkLambdaCompletionStatus_();
+    if (!statusCheck.success) {
+      Logger.log(`前提となるLambda処理が本日完了していないため、後続処理を中断しました。理由: ${statusCheck.reason}`);
+      notifyPreconditionFailure_(statusCheck.reason);
       return;
     }
     Logger.log("Lambdaの本日分の正常完了を確認しました。後続処理を続行します。");
@@ -92,27 +94,58 @@ function getOrCreateSheet_(spreadsheet, sheetName) {
 
 /**
  * Lambdaの処理が正常に完了したことを示すフラグファイルを確認します。
- * @returns {boolean} Lambdaが正常に完了していればtrue
+ * @returns {{success: boolean, reason: (string|undefined)}} 成功可否と、失敗時はその理由
  * @private
  */
 function checkLambdaCompletionStatus_() {
   try {
     const s3 = S3.getInstance(CONFIG.AWS_ACCESS_KEY_ID, CONFIG.AWS_SECRET_ACCESS_KEY, CONFIG.S3_BUCKET_REGION);
-    const s3Object = s3.getObject(CONFIG.S3_BUCKET_NAME, S3_FLAG_FILE_KEY);
-    const content = s3Object.getDataAsString('utf-8');
-    const statusData = JSON.parse(content);
+    // Lambda側がContentType='application/json'でアップロードしているため、
+    // S3ライブラリのgetObject()は自動的にJSON.parse済みのオブジェクトを返す（Blobではない）。
+    // ファイルが存在しない場合はnullが返る。
+    const statusData = s3.getObject(CONFIG.S3_BUCKET_NAME, S3_FLAG_FILE_KEY);
+    if (!statusData) {
+      const reason = `フラグファイル (s3://${CONFIG.S3_BUCKET_NAME}/${S3_FLAG_FILE_KEY}) が存在しません。Lambda処理が未実行、または処理中の可能性があります。`;
+      Logger.log(reason);
+      return { success: false, reason };
+    }
     const today = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy-MM-dd");
 
     if (statusData.status === 'SUCCESS' && statusData.last_success_date === today) {
-      return true;
+      return { success: true };
     }
-    Logger.log(`Lambdaの完了ステータスが期待値と異なります。Status: ${statusData.status}, LastSuccessDate: ${statusData.last_success_date}`);
-    return false;
+
+    const reason = statusData.status === 'FAILURE'
+      ? `Lambda処理がエラー終了しました。エラー内容: ${statusData.error_message || '(不明)'}`
+      : `Lambdaの完了ステータスが期待値と異なります。Status: ${statusData.status}, LastSuccessDate: ${statusData.last_success_date}`;
+    Logger.log(reason);
+    return { success: false, reason };
   } catch (e) {
-    Logger.log(`Lambda完了ステータスファイルの確認エラー: ${e.message}`);
-    Logger.log(`ファイル s3://${CONFIG.S3_BUCKET_NAME}/${S3_FLAG_FILE_KEY} が存在しないか、読み取れませんでした。`);
-    return false;
+    const reason = `Lambda完了ステータスファイルの確認処理でエラーが発生しました。Error: ${e.message}`;
+    Logger.log(reason);
+    return { success: false, reason };
   }
+}
+
+/**
+ * Lambda処理の完了確認に失敗した（想定外の状態）ことを管理者に通知します。
+ * @param {string} reason - 失敗理由
+ * @private
+ */
+function notifyPreconditionFailure_(reason) {
+  if (!CONFIG.EMAIL_ADDRESSES) {
+    Logger.log('通知先メールアドレスが設定されていないため、メール送信をスキップしました。');
+    return;
+  }
+  const subject = "【エラー】リンクチェック後処理 - Lambda処理の完了が未確認です";
+  const body = `リンクチェック後処理（GAS）の実行時、Lambda処理の完了を確認できなかったため、後続処理を中断しました。
+
+理由:
+${reason}
+
+Lambdaの実行状況、およびS3上のフラグファイル (${S3_FLAG_FILE_KEY}) をご確認ください。`;
+  MailApp.sendEmail(CONFIG.EMAIL_ADDRESSES, subject, body);
+  Logger.log('前提条件未達の通知メールを送信しました。');
 }
 
 /**
@@ -126,8 +159,32 @@ function deleteS3FlagFile_() {
     s3.deleteObject(CONFIG.S3_BUCKET_NAME, S3_FLAG_FILE_KEY);
     Logger.log('フラグファイルの削除が完了しました。');
   } catch (e) {
-    Logger.log(`警告: S3フラグファイルの削除に失敗しました。Error: ${e.message}`);
+    const reason = `S3フラグファイル (${S3_FLAG_FILE_KEY}) の削除に失敗しました。Error: ${e.message}`;
+    Logger.log(`警告: ${reason}`);
+    notifyFlagFileDeletionFailure_(reason);
   }
+}
+
+/**
+ * S3フラグファイルの削除に失敗したことを管理者に通知します。
+ * 本体処理（結果反映・完了メール送信）自体は成功しているため、警告として通知します。
+ * @param {string} reason - 失敗理由
+ * @private
+ */
+function notifyFlagFileDeletionFailure_(reason) {
+  if (!CONFIG.EMAIL_ADDRESSES) {
+    Logger.log('通知先メールアドレスが設定されていないため、メール送信をスキップしました。');
+    return;
+  }
+  const subject = "【警告】リンクチェック後処理 - フラグファイルの削除に失敗しました";
+  const body = `リンクチェック後処理（GAS）自体は正常に完了しましたが、S3上のフラグファイルの削除に失敗しました。
+
+理由:
+${reason}
+
+フラグファイルが残存していても翌日の判定（本日日付との突合）には影響しませんが、原因調査のためS3の状態をご確認ください。`;
+  MailApp.sendEmail(CONFIG.EMAIL_ADDRESSES, subject, body);
+  Logger.log('フラグファイル削除失敗の通知メールを送信しました。');
 }
 
 /**
