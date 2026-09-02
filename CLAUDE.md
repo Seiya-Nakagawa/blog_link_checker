@@ -18,7 +18,7 @@ Full spec: `docs/【ブログリンクチェッカー】要件定義書.md` (req
 
 ## Repository layout
 
-```
+```text
 gas/          Google Apps Script source (manually pasted into the GAS project — see Deployment notes)
 terraform/    Terraform (Terraform Cloud backend) + Lambda source
 docs/         要件定義書 / 基本設計書 / 構成図 — the source of truth for behavior, read before changing logic
