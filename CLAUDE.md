@@ -3,7 +3,7 @@
 このファイルは、本リポジトリ固有の事情を記録したものです。
 
 基本方針・機密情報の取り扱い・Git 運用・コーディング規約・Markdown 記法などの共通規約は
-グローバル規約（`~/.claude/CLAUDE.md`、`~/.gemini/GEMINI.md`、`~/.claude/rules/`）に従います。
+グローバル規約（`~/.claude/CLAUDE.md`、`~/.claude/rules/`）に従います。
 **本ファイルに共通規約を重複定義しないこと。**
 
 ## Project overview
