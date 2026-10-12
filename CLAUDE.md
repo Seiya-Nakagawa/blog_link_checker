@@ -39,7 +39,7 @@ terraform login   # first time only
 terraform plan     # local plan check only; apply happens in Terraform Cloud on push
 ```
 
-Lambda deployment is bundled into `terraform apply`: `data.tf` zips `terraform/lambda/link_checker_lambda.py` via `archive_file` on every plan/apply, so editing the Lambda code just requires a normal `git push` — no manual packaging step. The Python dependency layer (`requirements.txt` contents: `requests`, `beautifulsoup4`) is a separately-managed zip pre-uploaded to `s3://<bucket>/lambda-layers/${system_name}_python_libraries.zip`; Terraform only reads it via `data.aws_s3_object`, it does not build it.
+Lambda deployment is bundled into `terraform apply`: `data.tf` zips `terraform/lambda/link_checker_lambda.py` via `archive_file` on every plan/apply, so editing the Lambda code just requires a normal `git push` — no manual packaging step. `aws_lambda_function.link_checker_lambda` ignores `filename` via `lifecycle.ignore_changes`, because the Terraform Cloud agent's per-run working directory (`run-xxxx/`) is embedded in that path and would otherwise show a diff on every plan; actual code changes are still detected through `source_code_hash`. The Python dependency layer (`requirements.txt` contents: `requests`, `beautifulsoup4`) is a separately-managed zip pre-uploaded to `s3://<bucket>/lambda-layers/${system_name}_python_libraries.zip`; Terraform only reads it via `data.aws_s3_object`, it does not build it.
 
 ### GAS
 

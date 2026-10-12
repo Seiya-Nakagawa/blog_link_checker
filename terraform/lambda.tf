@@ -29,6 +29,13 @@ resource "aws_lambda_function" "link_checker_lambda" {
 
   layers = [aws_lambda_layer_version.dependencies_layer.arn]
 
+  # Terraform Cloud のエージェントは実行ごとに作業ディレクトリ(run-xxxx)が変わるため、
+  # filename のパスが毎回変わり、コードが同一でも plan に差分が出てしまう。
+  # コードの更新は source_code_hash で検知するため、filename は差分判定から除外する
+  lifecycle {
+    ignore_changes = [filename]
+  }
+
   logging_config {
     log_format            = "JSON"
     application_log_level = "INFO"
@@ -52,9 +59,9 @@ resource "aws_lambda_function" "link_checker_lambda" {
   }
 
   tags = {
-    Name        = "${var.system_name}-${var.env}-link-checker-lambda",
-    SystemName  = var.system_name,
-    Env         = var.env,
+    Name       = "${var.system_name}-${var.env}-link-checker-lambda",
+    SystemName = var.system_name,
+    Env        = var.env,
   }
 
   depends_on = [
